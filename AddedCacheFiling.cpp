@@ -137,7 +137,7 @@ int main(int argc, char *argv[])
         // #pragma omp parallel for akan memparalelkan loop terluar 'i' ke dalam thread-thread CPU.
         // collapse(2) menggabungkan loop 'i' dan 'j' menjadi satu ruang iterasi besar agar pembagian beban kerja ke semua core CPU merata.
         // schedule(dynamic) mendistribusikan beban secara dinamis, sangat bagus jika performa tiap core sedikit berbeda.
-        #pragma omp parallel for collapse(2) schedule(dynamic)
+        /*
         // Local Computation Block
         for (int i = 0; i < block_size; i++)
         {
@@ -149,6 +149,37 @@ int main(int argc, char *argv[])
                 }
             }
         }
+        */
+
+        int b = 64; // Ukuran tile (b x b) yang digeser
+
+        #pragma omp parallel for collapse(2) schedule(dynamic)
+        for (int ii = 0; ii < block_size; ii += b)          // 1. Geser Tile Baris (ii)
+        {
+            for (int jj = 0; jj < block_size; jj += b)      // 2. Geser Tile Kolom (jj)
+            {
+                for (int kk = 0; kk < block_size; kk += b)  // 3. Geser Tile Akumulasi (kk)
+                {
+                    // Batas aman ubin lokal
+                    int i_max = std::min(ii + b, block_size);
+                    int j_max = std::min(jj + b, block_size);
+                    int k_max = std::min(kk + b, block_size);
+
+                    // 3 Kalang Terdalam: Menghitung elemen di dalam satu ubin kecil
+                    for (int i = ii; i < i_max; ++i)         // 4. Kalang elemen lokal i
+                    {
+                        for (int k = kk; k < k_max; ++k)     // 5. Kalang elemen lokal k (dioptimalkan)
+                        {
+                            double rA = buffA[IDX(i, k, block_size)];
+                            for (int j = jj; j < j_max; ++j) // 6. Kalang elemen lokal j
+                            {
+                                myC[IDX(i, j, block_size)] += rA * buffB[IDX(k, j, block_size)];
+                            }
+                        }
+                    }
+                }
+            }
+        }       
     }
 
     double end_time = MPI_Wtime();
